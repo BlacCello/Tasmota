@@ -297,6 +297,8 @@ void sml_callRxRead(void *self) { ((SML_ESP32_SERIAL*)self)->rxRead(); };
 SML_ESP32_SERIAL::SML_ESP32_SERIAL(uint32_t index) {
   uart_index = index;
   m_valid = true;
+  hws = nullptr;
+  m_buffer = nullptr;
 }
 
 SML_ESP32_SERIAL::~SML_ESP32_SERIAL(void) {
@@ -344,8 +346,13 @@ void SML_ESP32_SERIAL::rx_intr_enable(void) {
 bool SML_ESP32_SERIAL::begin(uint32_t speed, uint32_t smode, int32_t recpin, int32_t trxpin, int32_t invert) {
   if (!m_valid) { return false; }
 
-  m_buffer = 0;
   if (recpin < 0) {
+    if (m_buffer) {
+      // begin() called again (e.g. sml(-1 ...)), release previous buffer and interrupt
+      detachInterrupt(m_rx_pin);
+      free(m_buffer);
+      m_buffer = nullptr;
+    }
     setbaud(speed);
     m_rx_pin = -recpin;
     serial_buffer_size = ESP32_SWS_BUFFER_SIZE;
@@ -359,7 +366,10 @@ bool SML_ESP32_SERIAL::begin(uint32_t speed, uint32_t smode, int32_t recpin, int
     cfgmode = smode;
     m_rx_pin = recpin;
     m_tx_pin = trxpin;
-    hws = new HardwareSerial(uart_index);
+    if (!hws) {
+      // reuse existing object, begin() reconfigures the running UART
+      hws = new HardwareSerial(uart_index);
+    }
     if (hws) {
       hws->begin(speed, cfgmode, m_rx_pin, m_tx_pin, invert);
     }
